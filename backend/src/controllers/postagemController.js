@@ -13,6 +13,12 @@ const getSchema = z.object({
     id: z.string().uuid({message: "Id inválido"})
 })
 
+const updateTarefaSchema = z.object({
+    titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
+    conteudo: z.string().min(3, {message: "O conteudo deve ter pelo menos 3 caracteres"}),
+    autor: z.string().min(3, {message: "O autor deve ter pelo menos 3 caracteres"}),
+})
+
 export const getAll = async (request, response) => {
     const page = parseInt(request.query.page) || 1
     const limit = parseInt(request.query.limit) || 10
@@ -90,5 +96,61 @@ export const getPostagem = async(request, response) => {
         response.status(200).json(postagem)
     } catch (error) {
         response.status(500).json({message: "Erro ao buscar postagem"})
+    }
+}
+
+export const updatePostagem = async(request, response) => {
+    const paramValidator = getSchema.safeParse(request.params)
+    if(! paramValidator.success){
+        response.status(400).json({
+            message: "Número de identificação está invalido",
+            detalhes: formatZodError(paramValidator.error)
+        })
+        return
+    }
+
+    const updateValidator = updateTarefaSchema.safeParse(request.body)
+    if(!updateValidator.success){
+        response.status(400).json({
+            message: "Dados para atualização estão incorretos",
+            details: formatZodError(updateValidator.error)
+        })
+        return
+    }
+    
+    const {id} = request.params
+    const {titulo, conteudo, autor, imagem} = request.body
+
+    //Validações foram subistituidas pelo zod
+    // if(!tarefa){
+    //     response.status(400).json({message: "A tarefa é obrigatória"})
+    //     return
+    // }
+    // if(!descricao){
+    //     response.status(400).json({message: "A descrição é obrigatória"})
+    //     return
+    // }
+    // if(!status){
+    //     response.status(400).json({message: "O status é obrigatório"})
+    //     return
+    // }
+
+    const postagemAtualizada ={
+        titulo,
+        conteudo,
+        autor,
+        imagem
+    }
+
+    try {
+        const[linhasAfetadas]= await Postagem.update(postagemAtualizada, {where: {id}})
+
+        if(linhasAfetadas <= 0){
+            response.status(404).json({message: "Postagem não encontrada"})
+            return
+        }
+        response.status(200).json({message: "Postagem atualizada com sucesso"})
+    } catch (error) {
+        response.status(500).json({message: "Erro ao atualizar postagem"})
     }
 }
