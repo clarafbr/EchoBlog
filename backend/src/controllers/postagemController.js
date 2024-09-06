@@ -9,6 +9,10 @@ const createSchema = z.object({
     autor: z.string().min(3, {message: "O autor deve ter pelo menos 3 caracteres"}),
 })
 
+const getSchema = z.object({
+    id: z.string().uuid({message: "Id inválido"})
+})
+
 export const getAll = async (request, response) => {
     const page = parseInt(request.query.page) || 1
     const limit = parseInt(request.query.limit) || 10
@@ -63,5 +67,28 @@ export const create = async (request, response)=> {
     } catch (error) {
         console.error(error)
         response.status(500).json({message:"Erro ao cadastrar postagem"})
+    }
+}
+
+export const getPostagem = async(request, response) => {
+    const paramValidator = getSchema.safeParse(request.params)
+    if(! paramValidator.success){
+        response.status(400).json({
+            message: "Número de identificação está invalido",
+            detalhes: formatZodError(paramValidator.error)
+        })
+        return
+    }
+    const {id} = request.params
+
+    try {
+        const postagem = await Postagem.findByPk(id)
+        if(postagem === null){
+            response.status(404).json({message: "postagem não encontrada"})
+            return
+        }
+        response.status(200).json(postagem)
+    } catch (error) {
+        response.status(500).json({message: "Erro ao buscar postagem"})
     }
 }
