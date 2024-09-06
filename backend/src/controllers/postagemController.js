@@ -13,7 +13,7 @@ const getSchema = z.object({
     id: z.string().uuid({message: "Id inválido"})
 })
 
-const updateTarefaSchema = z.object({
+const updatePostagemSchema = z.object({
     titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
     conteudo: z.string().min(3, {message: "O conteudo deve ter pelo menos 3 caracteres"}),
     autor: z.string().min(3, {message: "O autor deve ter pelo menos 3 caracteres"}),
@@ -113,7 +113,7 @@ export const updatePostagem = async(request, response) => {
         return
     }
 
-    const updateValidator = updateTarefaSchema.safeParse(request.body)
+    const updateValidator = updatePostagemSchema.safeParse(request.body)
     if(!updateValidator.success){
         response.status(400).json({
             message: "Dados para atualização estão incorretos",
@@ -124,20 +124,6 @@ export const updatePostagem = async(request, response) => {
     
     const {id} = request.params
     const {titulo, conteudo, autor, imagem} = request.body
-
-    //Validações foram subistituidas pelo zod
-    // if(!tarefa){
-    //     response.status(400).json({message: "A tarefa é obrigatória"})
-    //     return
-    // }
-    // if(!descricao){
-    //     response.status(400).json({message: "A descrição é obrigatória"})
-    //     return
-    // }
-    // if(!status){
-    //     response.status(400).json({message: "O status é obrigatório"})
-    //     return
-    // }
 
     const postagemAtualizada ={
         titulo,
