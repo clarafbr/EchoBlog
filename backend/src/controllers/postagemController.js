@@ -145,6 +145,7 @@ export const updatePostagem = async(request, response) => {
     }
 }
 
+//DELETAR POSTAGEM
 export const deletePostagem = async(request, response) => {
     const paramValidator = getSchema.safeParse(request.params)
     if(! paramValidator.success){
