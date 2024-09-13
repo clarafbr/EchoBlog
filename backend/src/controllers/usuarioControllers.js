@@ -1,133 +1,141 @@
-import { request, response } from "express"
 import Usuario from "../models/usuarioModel.js"
+import bcrypt from "bcrypt";
 import { z } from "zod"
-import formatZodError from "../helpers/zodError.js"
+import jwt from "jsonwebtoken";
 
 
 //Validações com o zod
-const createSchema = z.object({
-    nome: z.string().min(3, {message: "O nome deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
-    email: z.string().min(10, {message: "O email deve ter pelo menos 10 caracteres"}),
-    senha: z.string().min(5, {message: "A senha deve ter pelo menos 5 caracteres"}),
-    papel: z.enum(["leitor", "administrador", "autor"])
+const createUserSchema = z.object({
+    nome: z.string().min(3, {message: "O nome deve ter pelo menos 3 caracteres"}),
+    email: z.string().email({message: "Email inválido!"}),
+    senha: z.string().min(6, {message: "A senha deve ter pelo menos 6 caracteres"}),
+    papel: z.enum(["leitor", "administrador", "autor"]).optional()
+})
+const loginSchema = z.object({
+    email: z.string().email({ message: "Email inválido!"}),
+    senha: z.string().min(6, { message: "A senha deve ter pelo menos 6 caracteres" }),
 })
 const updateUsuarioSchema = z.object({
-    nome: z.string().min(3, {message: "O nome deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
-    email: z.string().min(10, {message: "O email deve ter pelo menos 10 caracteres"}),
-    senha: z.string().min(5, {message: "A senha deve ter pelo menos 5 caracteres"}),
-    papel: z.enum(["leitor", "administrador", "autor"])
+    nome: z.string().min(3, {message: "O nome deve ter pelo menos 3 caracteres"}).optional(),
+    email: z.string().email({message: "Email inválido!"}).optional(),
+    senha: z.string().min(6, {message: "A senha deve ter pelo menos 6 caracteres"}).optional(),
 })
-const buscarUsuarioPorFiltroSchema = z.object({
-    filtro: z.string().min(3, {message: "O nome deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
-})
+const papelSchema = z.object({
+    papel: z.enum(["administrador", "autor", "leitor"], { message: "Papel inválido" }),
+}) 
 
-export const create = async (request, response) => {
-    
-    //implementar a validação 
-    const bodyValidation = createSchema.safeParse(request.body)
-    if(!bodyValidation.success){
-        response.status(400).json({
-            message: "Os dados recebidos do corpo da requisição são invalidos",
-            detalhes: formatZodError(bodyValidation.error)
-        })
-        return
-    }
-    
-
-    const {nome, email, senha}= request.body
-    const papel = "leitor"
-
-    const novoUsuario = {
-        nome,
-        email,
-        senha,
-        papel
-    }
+export const create = async (request, response)=> {
 
     try {
-        await Usuario.create(novoUsuario)
-        response.status(201).json({message:"Usuário registrado com sucesso!"})
+        const { nome, email, senha, papel } = createUserSchema.parse(request.body);
+        const hashedSenha = await bcrypt.hash(senha, 10);
+    
+        const definirPapel = papel ? papel : "leitor";
+    
+        const novoUsuario = await Usuario.create({
+            nome,
+            email,
+            senha: hashedSenha,
+            papel: definirPapel,
+        });
+    
+        response.status(201).json({ message: "Usuário registrado com sucesso", usuario: novoUsuario });
     } catch (error) {
-        console.error(error)
-        response.status(500).json({message:"Erro ao registrar usuário"})
+        response.status(400).json({ error: error.message });
     }
 }
 
 export const login = async (request, response) => {
-
+    try {
+        const { email, senha } = loginSchema.parse(request.body);
+    
+        const usuario = await Usuario.findOne({ where: { email } });
+        if (!usuario) {
+            return res.status(404).json({message: "Usuário não encontrado"});
+        }
+    
+        const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+        if (!senhaCorreta) {
+            return res.status(401).json({message: "Senha incorreta"});
+        }
+    
+        const token = jwt.sign({ id: usuario.id, papel: usuario.papel }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    
+        response.status(200).json({message: "Login realizado com sucesso!", token});
+    } catch (error) {
+        response.status(400).json({error: error.message});
+    }
 }
 
 export const updateUsuario = async(request, response) => {
-    const paramValidator = getSchema.safeParse(request.params)
-    if(! paramValidator.success){
-        response.status(400).json({
-            message: "Número de identificação está invalido",
-            detalhes: formatZodError(paramValidator.error)
-        })
-        return
-    }
-
-    const updateValidator = updateUsuarioSchema.safeParse(request.body)
-    if(!updateValidator.success){
-        response.status(400).json({
-            message: "Dados para atualização estão incorretos",
-            details: formatZodError(updateValidator.error)
-        })
-        return
-    }
-    
-    const {id} = request.params
-    const {nome, email, senha, papel} = request.body
-
-    const UsuarioAtualizado ={
-        nome,
-        email,
-        senha,
-        papel
-    }
-
     try {
-        const[linhasAfetadas]= await Usuario.update(UsuarioAtualizado, {where: {id}})
-
-        if(linhasAfetadas <= 0){
-            response.status(404).json({message: "Usuário não encontrado"})
-            return
+        const { id } = request.params;
+        const { nome, email, senha } = updateUsuarioSchema.parse(request.body);
+    
+        const usuario = await Usuario.findByPk(id);
+        if (!usuario) {
+            return response.status(404).json({message: "Usuário não encontrado"});
         }
-        response.status(200).json({message: "Usuario atualizado com sucesso"})
+    
+        usuario.nome = nome || usuario.nome;
+        usuario.email = email || usuario.email;
+    
+        if (senha) {
+            usuario.senha = await bcrypt.hash(senha, 10);
+        }
+    
+        await usuario.save();
+    
+        response.status(200).json({message: "Usuário atualizado com sucesso!", usuario});
     } catch (error) {
-        response.status(500).json({message: "Erro ao atualizar usuário"})
+        response.status(400).json({error: error.message});
     }
 }
 
 export const getUsuarioPorFiltro = async(request, response) => {
-    const filtroValidation = buscarUsuarioPorFiltroSchema.safeParse(request.params)
-    if(!filtroValidation.success){
-        response.status(400).json({
-            message: "Inválido",
-            details: formatZodError(filtroValidation.error)
-        })
-        return
-    }
-    
-    const {filtro} = request.params
     try {
-        const usuarios = await Usuario.findAll({
-            where: {papel: filtro} || {nome: filtro} || {email: filtro},
-            raw: true,
-        })
-
-        response.status(200).json(usuarios)
+        const usuarios = await Usuario.findAll();
+    
+        response.status(200).json(usuarios);
     } catch (error) {
-        response.status(500).json({err: "Erro ao buscar usuarios"})
+        response.status(500).json({message: "Erro ao listar usuários", error: error.message});
     }
 }
 
 export const deleteUsuario = async(request, response) => {
-
+    try {
+        const { id } = request.params;
+    
+        const usuario = await Usuario.findByPk(id);
+        if (!usuario) {
+            return res.status(404).json({message: "Usuário não encontrado"});
+        }
+    
+        await usuario.destroy();
+    
+        response.status(200).json({message: "Usuário excluído com sucesso!"});
+    } catch (error) {
+        response.status(500).json({error: "Erro ao excluir usuário", details: error.message});
+    }
 }
 
 export const updatePapel = async(request, response) => {
-
+    try {
+        const { id } = request.params; 
+        const { papel } = papelSchema.parse(request.body); 
+    
+        const usuario = await Usuario.findByPk(id);
+        if (!usuario) {
+            return response.status(404).json({message: "Usuário não encontrado"});
+        }
+    
+        usuario.papel = papel;
+        await usuario.save();
+    
+        response.status(200).json({message: "Papel do usuário atualizado com sucesso!", usuario});
+    } catch (error) {
+        response.status(400).json({error: error.message});
+    }
 }
 
 

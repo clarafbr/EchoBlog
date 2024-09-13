@@ -1,22 +1,19 @@
-import {request, response} from "express"
 import Postagem from "../models/postagemModel.js"
+import { Usuario } from "../models/usuarioModel.js"
 import { z } from "zod"
 import formatZodError from "../helpers/zodError.js"
 
 const createSchema = z.object({
-    titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
+    titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}),
     conteudo: z.string().min(3, {message: "O conteudo deve ter pelo menos 3 caracteres"}),
-    autor: z.string().min(3, {message: "O autor deve ter pelo menos 3 caracteres"}),
-})
-
-const getSchema = z.object({
-    id: z.string().uuid({message: "Id inválido"})
+    usuarioId: z.string().min(1, { message: "O ID do usuário é obrigatório" }),
+    imagem: z.string().optional(),
 })
 
 const updatePostagemSchema = z.object({
-    titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}).transform((txt)=>txt.toLowerCase()) ,
-    conteudo: z.string().min(3, {message: "O conteudo deve ter pelo menos 3 caracteres"}),
-    autor: z.string().min(3, {message: "O autor deve ter pelo menos 3 caracteres"}),
+    titulo: z.string().min(3, {message: "A postagem deve ter pelo menos 3 caracteres"}).optional(),
+    conteudo: z.string().min(3, {message: "O conteudo deve ter pelo menos 3 caracteres"}).optional(),
+    imagem: z.string().url({ message: "A URL da imagem deve ser válida" }).optional(),
 })
 
 //PUXAR TODAS AS POSTAGENS
@@ -60,88 +57,80 @@ export const create = async (request, response)=> {
     }
     
 
-    const {titulo, conteudo, autor, imagem}= request.body
+    const {titulo, conteudo, usuarioId, imagem}= request.body
 
     const novaPostagem = {
         titulo,
         conteudo,
-        autor,
+        usuarioId,
         imagem
     }
 
     try {
         await Postagem.create(novaPostagem)
-        response.status(201).json({message:"Postagem Cadastrada"})
+        response.status(201).json({message:"Postagem realizada com sucesso!"})
     } catch (error) {
         console.error(error)
-        response.status(500).json({message:"Erro ao cadastrar postagem"})
+        response.status(500).json({message:"Erro ao realizar postagem"})
     }
 }
 
 //PUXAR POSTAGEM POR ID
-export const getPostagem = async(request, response) => {
-    const paramValidator = getSchema.safeParse(request.params)
-    if(! paramValidator.success){
-        response.status(400).json({
-            message: "Número de identificação está invalido",
-            detalhes: formatZodError(paramValidator.error)
-        })
-        return
-    }
-    const {id} = request.params
-
+export const getPostagemId = async(request, response) => {
     try {
-        const postagem = await Postagem.findByPk(id)
-        if(postagem === null){
-            response.status(404).json({message: "postagem não encontrada"})
-            return
+        const { id } = idSchema.parse(request.params);
+    
+        const postagem = await Postagem.findByPk(id);
+    
+        if (!postagem) {
+            return response.status(404).json({ error: "Postagem não encontrada" });
         }
-        response.status(200).json(postagem)
+    
+        response.status(200).json(postagem);
     } catch (error) {
-        response.status(500).json({message: "Erro ao buscar postagem"})
+        if (error instanceof z.ZodError) {
+            return response.status(400).json({
+            errors: error.errors.map((err) => ({
+                path: err.path,
+                message: err.message,
+            })),
+        });
+        }
+        console.error(error);
+        response.status(500).json({ error: "Erro ao buscar a postagem" });
     }
 }
 
 //ATUALIZAR POSTAGEM
 export const updatePostagem = async(request, response) => {
-    const paramValidator = getSchema.safeParse(request.params)
-    if(! paramValidator.success){
-        response.status(400).json({
-            message: "Número de identificação está invalido",
-            detalhes: formatZodError(paramValidator.error)
-        })
-        return
-    }
-
-    const updateValidator = updatePostagemSchema.safeParse(request.body)
-    if(!updateValidator.success){
-        response.status(400).json({
-            message: "Dados para atualização estão incorretos",
-            details: formatZodError(updateValidator.error)
-        })
-        return
-    }
-    
-    const {id} = request.params
-    const {titulo, conteudo, autor, imagem} = request.body
-
-    const postagemAtualizada ={
-        titulo,
-        conteudo,
-        autor,
-        imagem
-    }
-
     try {
-        const[linhasAfetadas]= await Postagem.update(postagemAtualizada, {where: {id}})
-
-        if(linhasAfetadas <= 0){
-            response.status(404).json({message: "Postagem não encontrada"})
-            return
+        const { id } = idSchema.parse(request.params);
+        const { titulo, conteudo, imagem } = updatePostagemSchema.parse(request.body);
+    
+        const postagem = await Postagem.findByPk(id);
+    
+        if (!postagem) {
+            return response.status(404).json({ error: "Postagem não encontrada" });
         }
-        response.status(200).json({message: "Postagem atualizada com sucesso"})
+    
+        postagem.titulo = titulo || postagem.titulo;
+        postagem.conteudo = conteudo || postagem.conteudo;
+        postagem.imagem = imagem || postagem.imagem;
+    
+        await postagem.save();
+    
+        response.status(200).json(postagem);
     } catch (error) {
-        response.status(500).json({message: "Erro ao atualizar postagem"})
+        if (error instanceof z.ZodError) {
+            return response.status(400).json({
+            errors: error.errors.map((err) => ({
+                path: err.path,
+                message: err.message,
+            })),
+        });
+        }
+        console.error(error);
+        response.status(500).json({ error: "Erro ao atualizar a postagem" });
     }
 }
 
@@ -166,5 +155,54 @@ export const deletePostagem = async(request, response) => {
         response.status(200).json({message: "Postagem deletada com sucesso"})
     } catch (error) {
         response.status(500).json({message: "Erro ao buscar postagem"})
+    }
+}
+
+export const uploadImagem = async(request, response) =>{
+    try {
+        const { id } = idSchema.parse(request.params);
+    
+        if (!request.file) {
+            return response.status(400).json({ error: "Imagem não enviada" });
+        }
+    
+        const postagem = await Postagem.findByPk(id);
+    
+        if (!postagem) {
+            return response.status(404).json({ error: "Postagem não encontrada" });
+        }
+    
+        postagem.imagem = `/uploads/images/${request.file.filename}`;
+        await postagem.save();
+    
+        response.status(200).json({ message: "Imagem enviada com sucesso", imagem: postagem.imagem });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return response.status(400).json({
+            errors: error.errors.map((err) => ({
+                path: err.path,
+                message: err.message,
+            })),
+        });
+        }
+        console.error(error);
+        response.status(500).json({ error: "Erro ao enviar a imagem" });
+    }
+}
+
+export const listarPostagemPorAutor = async(request, response) =>{
+    try {
+        const { autor } = request.query;
+    
+        const filtro = {};
+        if (autor) {
+            filtro.usuarioId = autor;
+        }
+    
+        const postagens = await Postagem.findAll({ where: filtro });
+    
+        response.status(200).json(postagens);
+    } catch (error) {
+        response.status(500).json({ message: "Erro ao listar postagens", error: error.message });
     }
 }

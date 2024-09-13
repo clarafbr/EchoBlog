@@ -17,14 +17,16 @@ const Postagem = conn.define("postagens", {
         allowNull: false,
         required: true
     },
-    autor:{
+    usuarioId:{
         type:DataTypes.STRING,
-        allowNull: false,
-        required: true
+        references: {
+            model: 'usuarios',
+            key: 'id',
+        },
     },
     imagem:{
         type:DataTypes.STRING,
-        defaultValue: false,
+        defaultValue: null
     }
 }, {
     tableName: "postagens"
